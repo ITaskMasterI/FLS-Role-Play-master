@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, EmbedBuilder, Partials } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, Partials, PermissionsBitField } = require("discord.js");
 const inventory = require("./inventory");
 const statusCommand = require('./status.js');
 
@@ -15,16 +15,15 @@ const client = new Client({
 
 client.once("ready", () => {
   console.log(`✅ Бот запущен как ${client.user.tag}`);
-  statusCommand.restoreTimers(); // Восстановление таймеров статусов
+  statusCommand.restoreTimers();
 });
 
-const games = new Map(); // Храним прогресс игр по каналам
+const games = new Map();
 
 client.on("messageCreate", async (msg) => {
   try {
     if (msg.author.bot) return;
 
-    // Обработка команды статусов
     if (msg.content.startsWith('!status')) {
       const args = msg.content.slice('!status'.length).trim().split(/ +/);
       return statusCommand.execute(msg, args);
@@ -37,7 +36,7 @@ client.on("messageCreate", async (msg) => {
       const helpEmbed = new EmbedBuilder()
         .setColor(0xe67e22)
         .setTitle(`Привет, ${msg.author.username}! Это меню помощи`)
-        .setDescription("Я создан, чтобы оптимизировать RP процесс.\nВерсия: **1.6.0**\nВот список доступных команд:")
+        .setDescription("Я создан, чтобы оптимизировать RP процесс.\nВерсия: **1.8.0**\nВот список доступных команд:")
         .addFields(
           { name: "!ping", value: "Проверка отклика бота" },
           { name: "!updates", value: "Показывает changelog" },
@@ -47,35 +46,40 @@ client.on("messageCreate", async (msg) => {
           { name: "!mg", value: "Мини-Игра\n`!mg start`: Начать Мини-игру\n`!mg prog {число}`: Увеличить прогресс на рандомное количество до `{число}`\n`!mg decr`: Уменьшить\n`!mg stop` Принудительно остановить Мини-Игру" },
           { name: "!status", value: "Управление статусами\n`!status ready` - Готов (сброс через 12ч)\n`!status notready` - Не готов\n`!status check` - Показать готовых" },
           {
-            name: "!setinvsys",
-            value: "**!setinvsys** – Включает или отключает систему инвентаря в канале. " +
-              "Только для администраторов, модераторов и владельцев канала."
+            name: "Система инвентаря",
+            value: "**!setinvsys** - Вкл/выкл систему (админы)\n" +
+              "**!store reg/unreg @user** - Назначить/удалить GM\n" +
+              "**!store add @user предмет=количество** - Добавить предметы\n" +
+              "**!store remove @user предмет=количество** - Удалить предметы\n" +
+              "**!store delete @user предмет** - Полное удаление\n" +
+              "**!store check @user** - Проверить инвентарь\n" +
+              "**!inv show** - Показать свой инвентарь\n" +
+              "**!inv give @user предмет=количество** - Передать предмет"
           }
         );
       return msg.channel.send({ embeds: [helpEmbed] });
     }
-if (cmd === "!updates") {
-  const updatesEmbed = new EmbedBuilder()
-    .setColor(0xe67e22)
-    .setTitle(`Change log`)
-    .setDescription("Текущая версия 1.7.0")
-    .addFields(
-      { name: "1.4.0", value: "Добавлена система инвентаря" },
-      { name: "1.6.0", value: 
-        "Переработана система инвентаря\n" +
-        "Добавлена функция просмотра инвентаря игрока ГМом\n" +
-        "Добавлена функция передачи предметов\n" +
-        "Добавлена команда !updates"
-      },
-      { name: "1.7.0", value: 
-        "Добавлена система статусов\n" +
-        "Команда !status для управления статусами\n" +
-        "Автоматический сброс статуса через 12 часов\n" +
-        "Сохранение статусов между перезапусками бота"
-      }
-    );
-  return msg.channel.send({ embeds: [updatesEmbed] });
-}
+
+    if (cmd === "!updates") {
+      const updatesEmbed = new EmbedBuilder()
+        .setColor(0xe67e22)
+        .setTitle(`Change log`)
+        .setDescription("Текущая версия 1.8.0")
+        .addFields(
+          { name: "1.4.0", value: "Добавлена система инвентаря" },
+          { name: "1.6.0", value: 
+            "Переработана система инвентаря\n" +
+            "Добавлена функция просмотра инвентаря игрока ГМом\n" +
+            "Добавлена функция передачи предметов"
+          },
+          { name: "1.7.0", value: 
+            "Добавлена система статусов\n" +
+            "Автоматический сброс статуса через 12 часов\n" +
+            "Сохранение статусов между перезапусками"
+	   }
+        );
+      return msg.channel.send({ embeds: [updatesEmbed] });
+    }
 
     if (cmd === "!ping") {
       return msg.reply(`🏓 Понг! Задержка: **${Date.now() - msg.createdTimestamp}ms**`);
@@ -222,38 +226,166 @@ if (cmd === "!updates") {
       }
     }
 
-    if (cmd === "!inv") {
-      const subCmd = args.shift().toLowerCase();
-      if (subCmd === "show") {
-        await inventory.showInventory(msg);
-      } else if (subCmd === "give") {
-        await inventory.giveItem(msg, args);
-      } else {
-        msg.reply("⚠️ Неизвестная команда. Используйте: `!inv show`, `!inv give`.");
+    if (cmd === "!setinvsys") {
+      if (!msg.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+        return msg.reply("❌ У вас нет прав для использования этой команды.");
       }
+
+      const enabled = inventory.toggleSystem(msg.guild.id, msg.channel.id);
+      return msg.reply(`✅ Система инвентаря ${enabled ? "включена" : "выключена"} для этого канала.`);
     }
+
+    if (!inventory.isSystemEnabled(msg.guild.id, msg.channel.id)) return;
 
     if (cmd === "!store") {
       const subCmd = args.shift().toLowerCase();
+
+      if (subCmd === "reg") {
+        if (!msg.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+          return msg.reply("❌ У вас нет прав для назначения GM.");
+        }
+
+        const target = msg.mentions.users.first() || msg.author;
+        inventory.registerGM(msg.guild.id, msg.channel.id, target.id);
+        return msg.reply(`✅ <@${target.id}> теперь GM в этом канале.`);
+      }
+
+      if (subCmd === "unreg") {
+        if (!msg.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+          return msg.reply("❌ У вас нет прав для удаления GM.");
+        }
+
+        const target = msg.mentions.users.first() || msg.author;
+        inventory.unregisterGM(msg.guild.id, msg.channel.id, target.id);
+        return msg.reply(`✅ <@${target.id}> больше не GM в этом канале.`);
+      }
+
+      if (!inventory.isGM(msg.guild.id, msg.channel.id, msg.author.id)) {
+        return msg.reply("❌ Только GM могут использовать команды store.");
+      }
+
       if (subCmd === "add") {
-        await inventory.addItem(msg, args);
-      } else if (subCmd === "remove") {
-        await inventory.removeItem(msg, args);
-      } else if (subCmd === "delete") {
-        await inventory.deleteItem(msg, args);
-      } else if (subCmd === "reg") {
-        await inventory.registerGM(msg, args);
-      } else if (subCmd === "unreg") {
-        await inventory.unregisterGM(msg, args);
-      } else if (subCmd === "check") {
-        await inventory.checkInventory(msg, args);
-      } else {
-        msg.reply("⚠️ Неизвестная команда. Используйте: `!store add`, `!store remove`, `!store delete`, `!store reg`, `!store unreg`, `!store check`.");
+        const targetUser = msg.mentions.users.first();
+        if (!targetUser) {
+          return msg.reply("❌ Укажите пользователя для добавления предметов.");
+        }
+
+        const itemsArgs = args.filter(arg => !arg.startsWith('<@'));
+        const items = inventory.parseItemsArgs(itemsArgs);
+
+        if (Object.keys(items).length === 0) {
+          return msg.reply("❌ Укажите предметы для добавления в формате: предмет=количество");
+        }
+
+        inventory.addItems(msg.guild.id, msg.channel.id, targetUser.id, items);
+        return msg.reply(`✅ Предметы успешно добавлены в инвентарь <@${targetUser.id}>.`);
+      }
+
+      if (subCmd === "remove") {
+        const targetUser = msg.mentions.users.first();
+        if (!targetUser) {
+          return msg.reply("❌ Укажите пользователя для удаления предметов.");
+        }
+
+        const itemsArgs = args.filter(arg => !arg.startsWith('<@'));
+        const items = inventory.parseItemsArgs(itemsArgs);
+
+        if (Object.keys(items).length === 0) {
+          return msg.reply("❌ Укажите предметы для удаления в формате: предмет=количество");
+        }
+
+        inventory.removeItems(msg.guild.id, msg.channel.id, targetUser.id, items);
+        return msg.reply(`✅ Предметы успешно удалены из инвентаря <@${targetUser.id}>.`);
+      }
+
+      if (subCmd === "delete") {
+        const targetUser = msg.mentions.users.first();
+        if (!targetUser) {
+          return msg.reply("❌ Укажите пользователя для удаления предметов.");
+        }
+
+        const itemsArgs = args.filter(arg => !arg.startsWith('<@'));
+        const items = inventory.parseDeleteArgs(itemsArgs);
+
+        if (items.length === 0) {
+          return msg.reply("❌ Укажите предметы для полного удаления.");
+        }
+
+        inventory.deleteItems(msg.guild.id, msg.channel.id, targetUser.id, items);
+        return msg.reply(`✅ Предметы полностью удалены из инвентаря <@${targetUser.id}>.`);
+      }
+
+      if (subCmd === "check") {
+        const targetUser = msg.mentions.users.first();
+        if (!targetUser) {
+          return msg.reply("❌ Укажите пользователя для проверки инвентаря.");
+        }
+
+        const targetInventory = inventory.getInventory(msg.guild.id, msg.channel.id, targetUser.id);
+
+        if (Object.keys(targetInventory).length === 0) {
+          return msg.reply(`ℹ️ Инвентарь <@${targetUser.id}> пуст.`);
+        }
+
+        const inventoryList = Object.entries(targetInventory)
+          .map(([item, quantity]) => `• ${item}: ${quantity}`)
+          .join('\n');
+
+        const embed = new EmbedBuilder()
+          .setTitle(`Инвентарь <@${targetUser.id}>`)
+          .setDescription(inventoryList)
+          .setColor('#0099ff');
+
+        return msg.channel.send({ embeds: [embed] });
       }
     }
 
-    if (cmd === "!setinvsys") {
-      await inventory.setInventorySystem(msg);
+    if (cmd === "!inv") {
+      const subCmd = args.shift().toLowerCase();
+
+      if (subCmd === "show") {
+        const userInventory = inventory.getInventory(msg.guild.id, msg.channel.id, msg.author.id);
+
+        if (Object.keys(userInventory).length === 0) {
+          return msg.reply("ℹ️ Ваш инвентарь пуст.");
+        }
+
+        const inventoryList = Object.entries(userInventory)
+          .map(([item, quantity]) => `• ${item}: ${quantity}`)
+          .join('\n');
+
+        const embed = new EmbedBuilder()
+          .setTitle('Ваш инвентарь')
+          .setDescription(inventoryList)
+          .setColor('#0099ff');
+
+        return msg.channel.send({ embeds: [embed] });
+      }
+
+      if (subCmd === "give") {
+        const targetUser = msg.mentions.users.first();
+        if (!targetUser) {
+          return msg.reply("❌ Укажите пользователя для передачи предметов.");
+        }
+
+        if (targetUser.id === msg.author.id) {
+          return msg.reply("❌ Вы не можете передать предметы самому себе.");
+        }
+
+        const itemsArgs = args.filter(arg => !arg.startsWith('<@'));
+        const items = inventory.parseItemsArgs(itemsArgs);
+
+        if (Object.keys(items).length === 0) {
+          return msg.reply("❌ Укажите предметы для передачи в формате: предмет=количество");
+        }
+
+        try {
+          inventory.transferItems(msg.guild.id, msg.channel.id, msg.author.id, targetUser.id, items);
+          return msg.reply(`✅ Предметы успешно переданы <@${targetUser.id}>.`);
+        } catch (error) {
+          return msg.reply(`❌ Ошибка: ${error.message}`);
+        }
+      }
     }
 
   } catch (err) {
@@ -262,4 +394,3 @@ if (cmd === "!updates") {
 });
 
 client.login(process.env.TOKEN);
-
